@@ -20,6 +20,7 @@ app.get("/", (req, res) => {
 // Rota de callback para receber o código de autorização
 app.get("/callback", async (req, res) => {
   const authorizationCode = req.query.code;
+  console.log("Código de autorização:", authorizationCode);
 
   if (!authorizationCode) {
     return res.status(400).send("Código de autorização não encontrado.");
@@ -94,6 +95,10 @@ app.get("/api/contacts", isAuthenticated, async (req, res) => {
     // Se o token expirou, tentar renovar usando o refresh token
     if (error.response && error.response.status === 401) {
       const refreshToken = req.session.refresh_token;
+
+      if (!accessToken) {
+        return res.status(400).send("Access token não fornecido.");
+      }
       if (refreshToken) {
         try {
           const tokenResponse = await axios.post(
