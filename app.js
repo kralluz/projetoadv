@@ -2,43 +2,56 @@ import cors from "cors";
 import express from "express";
 import axios from "axios";
 import dotenv from "dotenv";
+import bodyParser from "body-parser";
 
 dotenv.config();
 
 const app = express();
 
-// Middleware para servir arquivos estáticos (opcional)
+app.use(bodyParser.json());
 app.use(express.json());
 app.use(cors());
 app.use(express.urlencoded({ extended: true }));
 
-// Rota principal (opcional)
-app.get("/", (req, res) => {
-  console.log("Servidor Backend rodando.");
-  res.send("Servidor Backend rodando.");
+const CLIENT_ID = process.env.CLIENT_ID;
+const CLIENT_SECRET = process.env.CLIENT_SECRET;
+const REDIRECT_URI = process.env.REDIRECT_URI;
+const FRONTEND_URL = process.env.FRONTEND_URL;
+
+// Endpoint para iniciar o fluxo OAuth
+app.post("/", (req, res) => {
+  const zohoAuthUrl = `https://accounts.zoho.com/oauth/v2/auth?response_type=code&client_id=${CLIENT_ID}&scope=${encodeURIComponent(
+    "ZohoCRM.modules.ALL" // Escopo atualizado para acessar contatos
+  )}&access_type=offline&prompt=consent&redirect_uri=${encodeURIComponent(
+    REDIRECT_URI
+  )}`;
+
+  console.log("Redirecionando para o login Zoho OAuth...");
+  console.log("URL de Autenticação Zoho:", zohoAuthUrl);
+  res.redirect(zohoAuthUrl);
 });
 
-// Rota de callback para receber o código de autorização
+// Endpoint de callback para trocar o código por tokens
 app.get("/callback", async (req, res) => {
   const authorizationCode = req.query.code;
-  console.log("Código de autorização:", authorizationCode);
+  console.log("Código de autorização recebido:", authorizationCode);
 
   if (!authorizationCode) {
+    console.error("Erro: Código de autorização não encontrado.");
     return res.status(400).send("Código de autorização não encontrado.");
   }
 
   try {
-    // Trocar o código de autorização por tokens
     const tokenResponse = await axios.post(
       "https://accounts.zoho.com/oauth/v2/token",
       null,
       {
         params: {
-          client_id: process.env.CLIENT_ID,
-          client_secret: process.env.CLIENT_SECRET,
+          client_id: CLIENT_ID,
+          client_secret: CLIENT_SECRET,
           grant_type: "authorization_code",
           code: authorizationCode,
-          redirect_uri: process.env.REDIRECT_URI,
+          redirect_uri: REDIRECT_URI,
         },
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
@@ -46,44 +59,53 @@ app.get("/callback", async (req, res) => {
       }
     );
 
-    const { access_token, refresh_token } = tokenResponse.data;
+   
 
-    // Verificar se FRONTEND_URL está definido
-    if (!process.env.FRONTEND_URL) {
-      console.error("FRONTEND_URL não está definido nas variáveis de ambiente");
-      return res.status(500).send("Erro de configuração no servidor.");
+    const tokenResponseData = tokenResponse.data;
+    console.log("!!!!!!!!!!!!!!!!!!!!");
+    console.log("!!!!!!!!!!!!!!!!!!!!");
+    console.log("Resposta de tokens:", tokenResponseData);
+    console.log("!!!!!!!!!!!!!!!!!!!!");
+    console.log("!!!!!!!!!!!!!!!!!!!!");
+
+    const { access_token, refresh_token, expires_in } = tokenResponse.data;
+
+    console.log("Access Token:", access_token);
+    console.log("Refresh Token:", refresh_token);
+    console.log("Expira em:", expires_in, "segundos");
+
+    try {
+      const contactsResponse = await axios.get(
+        "https://www.zohoapis.com/crm/v2/Contacts",
+        {
+          headers: {
+            Authorization: `Zoho-oauthtoken ${access_token}`,
+          },
+        }
+      );
+
+      console.log("Contatos obtidos da API do Zoho:", contactsResponse.data);
+    } catch (error) {
+      console.error(
+        "Erro ao obter contatos da API do Zoho:",
+        error.response?.data
+      );
+      console.error("Detalhes do erro:", error);
     }
 
-    // Redirecionar para frontend /dashboard com tokens na URL
-    res.redirect(
-      `${process.env.FRONTEND_URL}dashboard?access_token=${access_token}&refresh_token=${refresh_token}`
-    );
+    const redirectUrl = `${FRONTEND_URL}/dashboard?access_token=${access_token}&refresh_token=${refresh_token}&expires_in=${expires_in}`;
+    console.log("Redirecionando para o frontend com tokens:", redirectUrl);
+    res.redirect(redirectUrl);
   } catch (error) {
     console.error("Erro ao trocar o código por tokens:", error.response?.data);
+    console.error("Detalhes do erro:", error);
     res.status(500).send("Falha na autenticação.");
   }
 });
 
-const isAuthenticated = (req, res, next) => {
-  if (req.session.access_token) {
-    next();
-  } else {
-    res.status(401).send("Usuário não autenticado.");
-  }
-};
-
-// Rota para exibir a página de contatos (opcional)
-app.get("/dashboard", (req, res) => {
-  const { access_token, refresh_token } = req.query;
-
-  if (!access_token) {
-    return res.status(400).send("Access token não fornecido.");
-  }
-
-  return res.json({
-    access_token: access_token,
-    refresh_token: refresh_token,
-  });
+// Endpoint de saúde do servidor
+app.get("/health", (req, res) => {
+  res.send("Servidor Backend rodando.");
 });
 
 export default app;
