@@ -18,10 +18,12 @@ const CLIENT_SECRET = process.env.CLIENT_SECRET;
 const REDIRECT_URI = process.env.REDIRECT_URI;
 const FRONTEND_URL = process.env.FRONTEND_URL;
 
+let access_token_static = "";
+
 // Endpoint para iniciar o fluxo OAuth
 app.post("/", (req, res) => {
   const zohoAuthUrl = `https://accounts.zoho.com/oauth/v2/auth?response_type=code&client_id=${CLIENT_ID}&scope=${encodeURIComponent(
-    "ZohoCRM.modules.ALL" // Escopo atualizado para acessar contatos
+    "ZohoBigin.settings.ALL ZohoBigin.users.ALL ZohoBigin.org.ALL" // Escopo atualizado para acessar contatos
   )}&access_type=offline&prompt=consent&redirect_uri=${encodeURIComponent(
     REDIRECT_URI
   )}`;
@@ -59,8 +61,6 @@ app.get("/callback", async (req, res) => {
       }
     );
 
-   
-
     const tokenResponseData = tokenResponse.data;
     console.log("!!!!!!!!!!!!!!!!!!!!");
     console.log("!!!!!!!!!!!!!!!!!!!!");
@@ -69,30 +69,12 @@ app.get("/callback", async (req, res) => {
     console.log("!!!!!!!!!!!!!!!!!!!!");
 
     const { access_token, refresh_token, expires_in } = tokenResponse.data;
-
+    access_token_static = access_token;
     console.log("Access Token:", access_token);
     console.log("Refresh Token:", refresh_token);
     console.log("Expira em:", expires_in, "segundos");
 
-    try {
-      const contactsResponse = await axios.get(
-        "https://www.zohoapis.com/crm/v2/Contacts",
-        {
-          headers: {
-            Authorization: `Zoho-oauthtoken ${access_token}`,
-          },
-        }
-      );
-
-      console.log("Contatos obtidos da API do Zoho:", contactsResponse.data);
-    } catch (error) {
-      console.error(
-        "Erro ao obter contatos da API do Zoho:",
-        error.response?.data
-      );
-      console.error("Detalhes do erro:", error);
-    }
-
+    console.log("tokenResponse.data", tokenResponse.data);
     const redirectUrl = `${FRONTEND_URL}/dashboard?access_token=${access_token}&refresh_token=${refresh_token}&expires_in=${expires_in}`;
     console.log("Redirecionando para o frontend com tokens:", redirectUrl);
     res.redirect(redirectUrl);
@@ -100,6 +82,57 @@ app.get("/callback", async (req, res) => {
     console.error("Erro ao trocar o código por tokens:", error.response?.data);
     console.error("Detalhes do erro:", error);
     res.status(500).send("Falha na autenticação.");
+  }
+});
+
+// Nova Rota para Criar um Usuário no Zoho Bigin com Dados Estáticos
+app.post("/createUser", async (req, res) => {
+  // Dados de usuário fictícios e estáticos
+  const staticUserData = {
+    firstName: "João",
+    lastName: "Silva",
+    email: "joao.silva@exemplo.com",
+    role: "Gerente de Vendas", // Certifique-se de que o role está correto conforme a API do Zoho
+    // Adicione outros campos conforme necessário
+  };
+
+  try {
+    // Defina a URL da API do Zoho Bigin para criar um usuário
+    const zohoCreateUserUrl = "https://www.zohoapis.com/bigin/v1/users";
+
+    // Configurar os cabeçalhos de autorização
+    const headers = {
+      Authorization: `Zoho-oauthtoken ${access_token_static}`,
+      "Content-Type": "application/json",
+    };
+
+    // Corpo da solicitação com os dados do usuário estático
+    const body = {
+      data: [
+        {
+          first_name: staticUserData.firstName,
+          last_name: staticUserData.lastName,
+          email: staticUserData.email,
+          role: staticUserData.role, // Certifique-se de que o role está correto conforme a API
+          // Adicione outros campos conforme necessário
+        },
+      ],
+    };
+
+    // Fazer a solicitação para a API do Zoho Bigin
+    const response = await axios.post(zohoCreateUserUrl, body, { headers });
+
+    // Retornar a resposta da API para o cliente
+    res.status(response.status).json(response.data);
+  } catch (error) {
+    console.error(
+      "Erro ao criar usuário no Zoho Bigin:",
+      error.response?.data || error.message
+    );
+    const response = error.response?.data;
+    res
+      .status(500)
+      .json({ error: "Falha ao criar usuário no Zoho Bigin.", response });
   }
 });
 
